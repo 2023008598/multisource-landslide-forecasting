@@ -1,45 +1,34 @@
-# Multi-Source Landslide Forecasting & Joint Warning System
+# Source Code Architecture (`/src`)
 
-This repository implements an advanced time-series forecasting and multi-task learning pipeline for landslide displacement prediction and risk level early warning, utilizing heterogeneous geological monitoring data.
+This directory contains the core modularized implementation of the Spatio-Temporal Multi-Task Learning pipeline. The architecture strictly decouples data processing, model definition, training loops, and evaluation metrics to ensure high maintainability and scalability.
 
-## Project Overview
-Predicting geological hazards requires fusing multi-source data (Rainfall, Water Level, GPS, InSAR, etc.) with different sampling frequencies. This project constructs a "Driving Factor Extraction + Temporal Modeling + Spatial Constraint + Dual-Objective Output" framework.
+## Module Breakdown
 
-It simultaneously outputs:
-1. **Displacement Prediction (Regression):** Continuous monitoring point displacement sequences over a future horizon (`HORIZON = 3` months).
-2. **Risk Evolution (Classification):** Categorical risk levels (e.g., Blue, Yellow, Orange, Red) triggered within the exact same prediction window.
+### 1. `models.py`
+Defines the neural network architectures utilizing PyTorch[cite: 18]. 
+* **`MultiTaskGRU` & `AttentionGRU`:** The primary models featuring a shared temporal encoder with dual task-specific heads[cite: 18].
+  * *Regression Head:* Predicts displacement across multiple future horizons (`h1`, `h2`, `h3`, `cum_disp`)[cite: 18].
+  * *Classification Head:* Outputs categorical risk levels[cite: 18].
+* **Ablation Models:** Includes `LSTMModel` and `TCNModel` (Temporal Convolutional Network) for baseline comparisons[cite: 18].
 
-## Core Architecture: Multi-Task Attention-GRU
-Instead of training isolated models, the core network utilizes an `AttentionGRU` architecture that shares a temporal encoder to capture the latent dynamics of delayed rainfall and water-level fluctuations. 
+### 2. `train.py`
+Contains the custom `Trainer` class[cite: 20].
+* Implements the joint loss function: `Loss = MSELoss + λ * CrossEntropyLoss`[cite: 20].
+* Prevents exploding gradients using `torch.nn.utils.clip_grad_norm_`[cite: 20].
+* Integrates `ReduceLROnPlateau` for adaptive learning rate scheduling based on validation loss[cite: 20].
 
-**Advanced Engineering Features:**
-* **Joint Multi-Task Loss:** Optimizes a dynamic objective function balancing regression and classification:
-  `Loss = MSE(Displacement) + λ × CrossEntropy(Risk)` *(Default λ = 0.5)*
-* **Gradient Clipping & Adaptive LR:** Implements `clip_grad_norm_` to prevent exploding gradients in complex RNN structures, and uses `ReduceLROnPlateau` for precise convergence tracking.
-* **Ablation Models Available:** The `models.py` module also provides standard `MultiTaskGRU`, `LSTMModel`, and `TCNModel` for baseline benchmarking and ablation studies.
+### 3. `evaluate.py`
+The comprehensive `Evaluator` class for model diagnostics[cite: 17].
+* Calculates multi-dimensional metrics (MAE, RMSE, R², Accuracy, F1-score)[cite: 17].
+* Performs **Zone-Based Evaluation** (`evaluate_by_zone`) to analyze performance discrepancies across different geological deformation zones[cite: 17].
+* Automatically generates diagnostic plots (Prediction Curves, Error Distributions, Confusion Matrices)[cite: 17].
 
-## Deep Dive: Robustness & Data Leakage Prevention
+### 4. `data_loader.py` & `preprocess.py`
+Handles the ingestion and transformation of heterogeneous multi-source data[cite: 16, 19].
+* **`DataLoader`:** Parses node info and manages datetime formatting alignment[cite: 16].
+* **`DataPreprocessor`:** Enforces strict chronological data splitting (`split_by_time`) to prevent temporal data leakage and handles standard scaling exclusively fitted on the training distribution[cite: 19].
 
-**1. Strict Prevention of Temporal Leakage**
-A common pitfall in time-series deep learning is randomized data splitting, which inadvertently leaks future information. This pipeline enforces a strict chronological split:
-* **Train:** Up to `2023-12`
-* **Validation:** `2024-01` to `2024-06`
-* **Test:** `2024-07` onwards
-Standardizations are strictly computed *only* on the training distribution.
-
-**2. Comprehensive Evaluation & Zone Analysis**
-The `Evaluator` class goes beyond simple metrics. It evaluates the model across different spatial deformation zones and generates diagnostic artifacts including:
-* Prediction curves across distinct GPS nodes.
-* Error distribution histograms.
-* Multiclass Confusion Matrices for risk levels.
-* Feature Importance analysis.
-
-## Repository Structure
-* `config.py`: Centralized configuration for hyperparameters, data paths, and dynamic risk thresholds.
-* `main.py`: Entry point orchestrating the end-to-end multi-task execution pipeline.
-* `/src`: Highly modularized source code:
-  * `data_loader.py` & `preprocess.py`: Handles complex temporal alignment and NaN processing.
-  * `models.py`: Contains all neural architectures (`AttentionGRU`, `MultiTaskGRU`, `TCN`, etc.).
-  * `train.py`: Custom PyTorch Trainer logic with multi-task loss management.
-  * `evaluate.py`: Generates rigorous metrics (MAE, RMSE, R², F1) and analytical plots.
-* `/outputs`: Stores training checkpoints, prediction CSVs (`pred_test.csv`), and generated diagnostic figures.
+### 5. `utils.py`
+Utility functions ensuring reproducibility and I/O management[cite: 15].
+* `set_seed()`: Enforces deterministic behavior across numpy and CUDA backends[cite: 15].
+* `save_metrics()` & `save_predictions()`: Exports evaluation artifacts to JSON and CSV formats[cite: 15].
